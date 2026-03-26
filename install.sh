@@ -284,23 +284,55 @@ if [ "$MODO" == "local_build" ]; then
         git -C "$SOURCE_DIR" checkout "$SOURCE_REF"
     fi
 
+    normalize_name() {
+        echo "$1" | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]'
+    }
+
     resolve_service_dir() {
         local base="$1"
         shift
-        for candidate in "$@"; do
-            if [ -d "$base/$candidate" ]; then
-                echo "$base/$candidate"
-                return 0
-            fi
+        local candidates=("$@")
+        local candidate path path_name path_norm cand cand_norm
+
+        # 1) Match exato no primeiro nível (rápido e previsível)
+        for candidate in "${candidates[@]}"; do
+            for path in "$base/$candidate" "$base/${candidate,,}" "$base/${candidate^^}"; do
+                if [ -d "$path" ]; then
+                    echo "$path"
+                    return 0
+                fi
+            done
         done
+
+        # 2) Match flexível (case-insensitive + sufixos como -1, _v2)
+        for path in "$base"/* "$base"/*/*; do
+            [ -d "$path" ] || continue
+            path_name=$(basename "$path")
+            path_norm=$(normalize_name "$path_name")
+
+            for cand in "${candidates[@]}"; do
+                cand_norm=$(normalize_name "$cand")
+                if [[ "$path_norm" == "$cand_norm"* ]] || [[ "$path_norm" == *"$cand_norm"* ]]; then
+                    echo "$path"
+                    return 0
+                fi
+            done
+        done
+
         return 1
     }
 
     # Evita saída silenciosa com set -e quando um diretório não é encontrado.
-    BACKEND_SRC=$(resolve_service_dir "$SOURCE_DIR" "backend" "Backend" || true)
-    CHANNEL_SRC=$(resolve_service_dir "$SOURCE_DIR" "channel" "Channel" || true)
-    FRONTEND_SRC=$(resolve_service_dir "$SOURCE_DIR" "frontend" "Frontend" || true)
-    TRANSCRICAO_SRC=$(resolve_service_dir "$SOURCE_DIR" "transcricao" "Transcricao" || true)
+    BACKEND_SRC=$(resolve_service_dir "$SOURCE_DIR" "backend" || true)
+    CHANNEL_SRC=$(resolve_service_dir "$SOURCE_DIR" "channel" || true)
+    FRONTEND_SRC=$(resolve_service_dir "$SOURCE_DIR" "frontend" || true)
+    TRANSCRICAO_SRC=$(resolve_service_dir "$SOURCE_DIR" "transcricao" "transcreve" || true)
+
+    echo "🔎 Auto-detecção de diretórios:"
+    [ -n "$BACKEND_SRC" ] && echo "  backend: $BACKEND_SRC"
+    [ -n "$CHANNEL_SRC" ] && echo "  channel: $CHANNEL_SRC"
+    [ -n "$FRONTEND_SRC" ] && echo "  frontend: $FRONTEND_SRC"
+    [ -n "$TRANSCRICAO_SRC" ] && echo "  transcricao: $TRANSCRICAO_SRC"
 
     if [ -z "$BACKEND_SRC" ] || [ -z "$CHANNEL_SRC" ] || [ -z "$FRONTEND_SRC" ] || [ -z "$TRANSCRICAO_SRC" ]; then
         echo "⚠️ Estrutura padrão não reconhecida para build local."
