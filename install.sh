@@ -366,6 +366,68 @@ if [ "$MODO" == "local_build" ]; then
         exit 1
     fi
 
+    find_dockerfile_rel() {
+        local ctx="$1"
+        local candidate
+        for candidate in \
+            "$ctx/Dockerfile" \
+            "$ctx/dockerfile" \
+            "$ctx/Dockerfile.prod" \
+            "$ctx/Dockerfile.production" \
+            "$ctx/docker/Dockerfile" \
+            "$ctx/build/Dockerfile" \
+            "$ctx/app/Dockerfile"; do
+            if [ -f "$candidate" ]; then
+                echo "${candidate#"$ctx/"}"
+                return 0
+            fi
+        done
+
+        for candidate in "$ctx"/*/Dockerfile "$ctx"/*/*/Dockerfile; do
+            if [ -f "$candidate" ]; then
+                echo "${candidate#"$ctx/"}"
+                return 0
+            fi
+        done
+        return 1
+    }
+
+    BACKEND_DOCKERFILE_REL=$(find_dockerfile_rel "$BACKEND_SRC" || true)
+    CHANNEL_DOCKERFILE_REL=$(find_dockerfile_rel "$CHANNEL_SRC" || true)
+    FRONTEND_DOCKERFILE_REL=$(find_dockerfile_rel "$FRONTEND_SRC" || true)
+    TRANSCRICAO_DOCKERFILE_REL=$(find_dockerfile_rel "$TRANSCRICAO_SRC" || true)
+
+    if [ -z "$BACKEND_DOCKERFILE_REL" ]; then
+        read -r -p "📄 Dockerfile do backend (relativo a $BACKEND_SRC): " BACKEND_DOCKERFILE_REL
+    fi
+    if [ -z "$CHANNEL_DOCKERFILE_REL" ]; then
+        read -r -p "📄 Dockerfile do channel (relativo a $CHANNEL_SRC): " CHANNEL_DOCKERFILE_REL
+    fi
+    if [ -z "$FRONTEND_DOCKERFILE_REL" ]; then
+        read -r -p "📄 Dockerfile do frontend (relativo a $FRONTEND_SRC): " FRONTEND_DOCKERFILE_REL
+    fi
+    if [ -z "$TRANSCRICAO_DOCKERFILE_REL" ]; then
+        read -r -p "📄 Dockerfile da transcricao (relativo a $TRANSCRICAO_SRC): " TRANSCRICAO_DOCKERFILE_REL
+    fi
+
+    if [ ! -f "$BACKEND_SRC/$BACKEND_DOCKERFILE_REL" ] || \
+       [ ! -f "$CHANNEL_SRC/$CHANNEL_DOCKERFILE_REL" ] || \
+       [ ! -f "$FRONTEND_SRC/$FRONTEND_DOCKERFILE_REL" ] || \
+       [ ! -f "$TRANSCRICAO_SRC/$TRANSCRICAO_DOCKERFILE_REL" ]; then
+        echo "❌ Dockerfile não encontrado em um ou mais serviços."
+        echo "backend: $BACKEND_SRC/$BACKEND_DOCKERFILE_REL"
+        echo "channel: $CHANNEL_SRC/$CHANNEL_DOCKERFILE_REL"
+        echo "frontend: $FRONTEND_SRC/$FRONTEND_DOCKERFILE_REL"
+        echo "transcricao: $TRANSCRICAO_SRC/$TRANSCRICAO_DOCKERFILE_REL"
+        exit 1
+    fi
+
+    echo "🧾 Dockerfiles detectados:"
+    echo "  backend: $BACKEND_DOCKERFILE_REL"
+    echo "  channel: $CHANNEL_DOCKERFILE_REL"
+    echo "  frontend: $FRONTEND_DOCKERFILE_REL"
+    echo "  transcricao: $TRANSCRICAO_DOCKERFILE_REL"
+
     cat > ./docker-compose.local-build.yml <<EOF
 version: "3.8"
 services:
@@ -373,21 +435,25 @@ services:
     image: aarca/backend:local
     build:
       context: $BACKEND_SRC
+      dockerfile: $BACKEND_DOCKERFILE_REL
 
   aarca_channel:
     image: aarca/channel:local
     build:
       context: $CHANNEL_SRC
+      dockerfile: $CHANNEL_DOCKERFILE_REL
 
   aarca_frontend:
     image: aarca/frontend:local
     build:
       context: $FRONTEND_SRC
+      dockerfile: $FRONTEND_DOCKERFILE_REL
 
   aarca_transcricao:
     image: aarca/transcricao:local
     build:
       context: $TRANSCRICAO_SRC
+      dockerfile: $TRANSCRICAO_DOCKERFILE_REL
 EOF
     echo "✅ Arquivo docker-compose.local-build.yml gerado."
 fi
