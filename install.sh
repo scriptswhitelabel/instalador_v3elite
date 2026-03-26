@@ -428,32 +428,78 @@ if [ "$MODO" == "local_build" ]; then
     echo "  frontend: $FRONTEND_DOCKERFILE_REL"
     echo "  transcricao: $TRANSCRICAO_DOCKERFILE_REL"
 
+    resolve_build_target() {
+        local src="$1"
+        local dockerfile_rel="$2"
+        local df_dir
+        local df_name
+        local ctx="$src"
+        local df="$dockerfile_rel"
+
+        df_dir=$(dirname "$dockerfile_rel")
+        df_name=$(basename "$dockerfile_rel")
+
+        # Se o Dockerfile estiver em subpasta e ali houver indícios do projeto,
+        # usa essa subpasta como contexto para evitar erro de arquivos ausentes.
+        if [ "$df_dir" != "." ]; then
+            if [ -f "$src/$df_dir/requirements.txt" ] || \
+               [ -f "$src/$df_dir/package.json" ] || \
+               [ -f "$src/$df_dir/pyproject.toml" ] || \
+               [ -f "$src/$df_dir/Pipfile" ]; then
+                ctx="$src/$df_dir"
+                df="$df_name"
+            fi
+        fi
+
+        echo "$ctx|$df"
+    }
+
+    BACKEND_TARGET=$(resolve_build_target "$BACKEND_SRC" "$BACKEND_DOCKERFILE_REL")
+    CHANNEL_TARGET=$(resolve_build_target "$CHANNEL_SRC" "$CHANNEL_DOCKERFILE_REL")
+    FRONTEND_TARGET=$(resolve_build_target "$FRONTEND_SRC" "$FRONTEND_DOCKERFILE_REL")
+    TRANSCRICAO_TARGET=$(resolve_build_target "$TRANSCRICAO_SRC" "$TRANSCRICAO_DOCKERFILE_REL")
+
+    BACKEND_BUILD_CONTEXT="${BACKEND_TARGET%%|*}"
+    BACKEND_BUILD_DOCKERFILE="${BACKEND_TARGET#*|}"
+    CHANNEL_BUILD_CONTEXT="${CHANNEL_TARGET%%|*}"
+    CHANNEL_BUILD_DOCKERFILE="${CHANNEL_TARGET#*|}"
+    FRONTEND_BUILD_CONTEXT="${FRONTEND_TARGET%%|*}"
+    FRONTEND_BUILD_DOCKERFILE="${FRONTEND_TARGET#*|}"
+    TRANSCRICAO_BUILD_CONTEXT="${TRANSCRICAO_TARGET%%|*}"
+    TRANSCRICAO_BUILD_DOCKERFILE="${TRANSCRICAO_TARGET#*|}"
+
+    echo "🧱 Contextos de build:"
+    echo "  backend: $BACKEND_BUILD_CONTEXT (dockerfile: $BACKEND_BUILD_DOCKERFILE)"
+    echo "  channel: $CHANNEL_BUILD_CONTEXT (dockerfile: $CHANNEL_BUILD_DOCKERFILE)"
+    echo "  frontend: $FRONTEND_BUILD_CONTEXT (dockerfile: $FRONTEND_BUILD_DOCKERFILE)"
+    echo "  transcricao: $TRANSCRICAO_BUILD_CONTEXT (dockerfile: $TRANSCRICAO_BUILD_DOCKERFILE)"
+
     cat > ./docker-compose.local-build.yml <<EOF
 version: "3.8"
 services:
   aarca_backend:
     image: aarca/backend:local
     build:
-      context: $BACKEND_SRC
-      dockerfile: $BACKEND_DOCKERFILE_REL
+      context: $BACKEND_BUILD_CONTEXT
+      dockerfile: $BACKEND_BUILD_DOCKERFILE
 
   aarca_channel:
     image: aarca/channel:local
     build:
-      context: $CHANNEL_SRC
-      dockerfile: $CHANNEL_DOCKERFILE_REL
+      context: $CHANNEL_BUILD_CONTEXT
+      dockerfile: $CHANNEL_BUILD_DOCKERFILE
 
   aarca_frontend:
     image: aarca/frontend:local
     build:
-      context: $FRONTEND_SRC
-      dockerfile: $FRONTEND_DOCKERFILE_REL
+      context: $FRONTEND_BUILD_CONTEXT
+      dockerfile: $FRONTEND_BUILD_DOCKERFILE
 
   aarca_transcricao:
     image: aarca/transcricao:local
     build:
-      context: $TRANSCRICAO_SRC
-      dockerfile: $TRANSCRICAO_DOCKERFILE_REL
+      context: $TRANSCRICAO_BUILD_CONTEXT
+      dockerfile: $TRANSCRICAO_BUILD_DOCKERFILE
 EOF
     echo "✅ Arquivo docker-compose.local-build.yml gerado."
 fi
