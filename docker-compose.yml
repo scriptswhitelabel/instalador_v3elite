@@ -9,6 +9,10 @@
         - --providers.docker.exposedbydefault=false
         - --entrypoints.web.address=:80
         - --entrypoints.websecure.address=:443
+        # Redireciona HTTP (80) -> HTTPS (443). Como os routers estão no entrypoint websecure,
+        # isso evita 404 quando o usuário acessa sem "https://".
+        - --entrypoints.web.http.redirections.entrypoint.to=websecure
+        - --entrypoints.web.http.redirections.entrypoint.scheme=https
         - --certificatesresolvers.letsencryptresolver.acme.httpchallenge=true
         - --certificatesresolvers.letsencryptresolver.acme.httpchallenge.entrypoint=web
         - --certificatesresolvers.letsencryptresolver.acme.email=admin@aarca.com.br
