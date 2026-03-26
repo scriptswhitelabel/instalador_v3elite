@@ -275,9 +275,13 @@ if [ "$MODO" == "local_build" ]; then
     fi
 
     git -C "$SOURCE_DIR" fetch --all --tags
-    git -C "$SOURCE_DIR" checkout "$SOURCE_REF"
+
+    # Evita travar em pull/merge quando a branch local divergiu da origin.
     if git -C "$SOURCE_DIR" rev-parse --verify "origin/$SOURCE_REF" >/dev/null 2>&1; then
-        git -C "$SOURCE_DIR" pull --ff-only origin "$SOURCE_REF"
+        git -C "$SOURCE_DIR" checkout -B "$SOURCE_REF" "origin/$SOURCE_REF"
+        git -C "$SOURCE_DIR" reset --hard "origin/$SOURCE_REF"
+    else
+        git -C "$SOURCE_DIR" checkout "$SOURCE_REF"
     fi
 
     resolve_service_dir() {
