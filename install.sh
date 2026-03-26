@@ -38,41 +38,47 @@ DOCKER_COMPOSE_CMD=$(detect_docker_compose)
 
 # 🚀 Escolha entre Instalação ou Atualização
 echo "⚙️ Qual operação deseja realizar?"
-options=("Instalação" "Atualização")
+options=("Instalação" "Atualização" "Instalar com Build local")
 select opt in "${options[@]}"; do
     case $opt in
         "Instalação") MODO="install"; break ;;
         "Atualização") MODO="update"; break ;;
+        "Instalar com Build local") MODO="local_build"; break ;;
         *) echo "Opção inválida $REPLY";;
     esac
 done
 
 # 🔁 Ambiente e Tag
 DOCKER_TAG="latest"
-echo "⚠️ Selecione o ambiente:"
-options=("Produção" "Desenvolvimento" "Tag personalizada")
-select opt in "${options[@]}"; do
-    case $opt in
-        "Produção") 
-            echo "⚠️ Ambiente: Produção"
-            DOCKER_TAG="latest"
-            break 
-            ;;
-        "Desenvolvimento") 
-            echo "⚠️ Ambiente: Desenvolvimento"
-            DOCKER_TAG="develop"
-            break 
-            ;;
-        "Tag personalizada")
-            echo "⚠️ Tag personalizada selecionada"
-            read -r -p "🏷️ Digite a tag (ex: latest, develop, sha-6ebc48e, ou nome da branch): " CUSTOM_TAG
-            DOCKER_TAG="$CUSTOM_TAG"
-            echo "✅ Tag definida: $DOCKER_TAG"
-            break
-            ;;
-        *) echo "Opção inválida $REPLY";;
-    esac
-done
+if [ "$MODO" != "local_build" ]; then
+    echo "⚠️ Selecione o ambiente:"
+    options=("Produção" "Desenvolvimento" "Tag personalizada")
+    select opt in "${options[@]}"; do
+        case $opt in
+            "Produção") 
+                echo "⚠️ Ambiente: Produção"
+                DOCKER_TAG="latest"
+                break 
+                ;;
+            "Desenvolvimento") 
+                echo "⚠️ Ambiente: Desenvolvimento"
+                DOCKER_TAG="develop"
+                break 
+                ;;
+            "Tag personalizada")
+                echo "⚠️ Tag personalizada selecionada"
+                read -r -p "🏷️ Digite a tag (ex: latest, develop, sha-6ebc48e, ou nome da branch): " CUSTOM_TAG
+                DOCKER_TAG="$CUSTOM_TAG"
+                echo "✅ Tag definida: $DOCKER_TAG"
+                break
+                ;;
+            *) echo "Opção inválida $REPLY";;
+        esac
+    done
+else
+    DOCKER_TAG="local"
+    echo "⚠️ Build local selecionado. As imagens serão buildadas a partir do código-fonte."
+fi
 
 # 🔄 Se for atualização, faz apenas pull e up
 if [ "$MODO" == "update" ]; then
@@ -130,6 +136,18 @@ fi
 read -r -p "📦 Repositório GitHub (ex: usuario/repo ou org/repo): " GITHUB_REPO_INPUT
 GITHUB_REPO=$(normalize_github_repo "$GITHUB_REPO_INPUT")
 echo "✅ Repositório normalizado: $GITHUB_REPO"
+
+SOURCE_REPO_URL=""
+SOURCE_DIR="./_local_source"
+SOURCE_REF="main"
+
+if [ "$MODO" == "local_build" ]; then
+    SOURCE_REPO_URL="https://github.com/$GITHUB_REPO.git"
+    read -r -p "🌿 Branch/tag/commit para build local (padrão: main): " SOURCE_REF_INPUT
+    SOURCE_REF="${SOURCE_REF_INPUT:-main}"
+    echo "✅ Repositório de código-fonte: $SOURCE_REPO_URL"
+    echo "✅ Referência selecionada: $SOURCE_REF"
+fi
 
 # 🛠️ Coleta de domínios
 read -r -p "🌐 DOMÍNIO do FRONTEND: " FRONTEND_URL
@@ -247,6 +265,70 @@ for FILE in ./Backend/.env ./channel/.env ./frontend/.env ./docker-compose.yml; 
     replace_vars "$FILE"
 done
 
+# 🧱 Prepara build local (opcional)
+if [ "$MODO" == "local_build" ]; then
+    echo "📥 Baixando/atualizando código-fonte local..."
+    if [ -d "$SOURCE_DIR/.git" ]; then
+        git -C "$SOURCE_DIR" remote set-url origin "$SOURCE_REPO_URL"
+    else
+        git clone "$SOURCE_REPO_URL" "$SOURCE_DIR"
+    fi
+
+    git -C "$SOURCE_DIR" fetch --all --tags
+    git -C "$SOURCE_DIR" checkout "$SOURCE_REF"
+    if git -C "$SOURCE_DIR" rev-parse --verify "origin/$SOURCE_REF" >/dev/null 2>&1; then
+        git -C "$SOURCE_DIR" pull --ff-only origin "$SOURCE_REF"
+    fi
+
+    resolve_service_dir() {
+        local base="$1"
+        shift
+        for candidate in "$@"; do
+            if [ -d "$base/$candidate" ]; then
+                echo "$base/$candidate"
+                return 0
+            fi
+        done
+        return 1
+    }
+
+    BACKEND_SRC=$(resolve_service_dir "$SOURCE_DIR" "backend" "Backend")
+    CHANNEL_SRC=$(resolve_service_dir "$SOURCE_DIR" "channel" "Channel")
+    FRONTEND_SRC=$(resolve_service_dir "$SOURCE_DIR" "frontend" "Frontend")
+    TRANSCRICAO_SRC=$(resolve_service_dir "$SOURCE_DIR" "transcricao" "Transcricao" "transcricao")
+
+    if [ -z "$BACKEND_SRC" ] || [ -z "$CHANNEL_SRC" ] || [ -z "$FRONTEND_SRC" ] || [ -z "$TRANSCRICAO_SRC" ]; then
+        echo "❌ Estrutura do repositório não reconhecida para build local."
+        echo "Verifique se existem os diretórios backend/channel/frontend/transcricao no repositório informado."
+        exit 1
+    fi
+
+    cat > ./docker-compose.local-build.yml <<EOF
+version: "3.8"
+services:
+  aarca_backend:
+    image: aarca/backend:local
+    build:
+      context: $BACKEND_SRC
+
+  aarca_channel:
+    image: aarca/channel:local
+    build:
+      context: $CHANNEL_SRC
+
+  aarca_frontend:
+    image: aarca/frontend:local
+    build:
+      context: $FRONTEND_SRC
+
+  aarca_transcricao:
+    image: aarca/transcricao:local
+    build:
+      context: $TRANSCRICAO_SRC
+EOF
+    echo "✅ Arquivo docker-compose.local-build.yml gerado."
+fi
+
 # 🐳 Instala Docker se necessário
 if ! command -v docker &> /dev/null; then
     echo "🐳 Instalando Docker..."
@@ -267,16 +349,23 @@ else
     echo "✅ Docker Compose detectado: $DOCKER_COMPOSE_CMD"
 fi
 
-# 🔐 Login no GitHub Container Registry
-echo "🔐 Login no GitHub Container Registry (GHCR)..."
-echo "⚠️ Você precisa de um Personal Access Token (PAT) do GitHub com permissão 'read:packages'"
-echo "📝 Crie um em: https://github.com/settings/tokens"
-read -r -p "👤 Usuário GitHub: " GITHUB_USER
-read -r -s -p "🔑 GitHub Personal Access Token: " GITHUB_TOKEN
-echo ""
-echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_USER" --password-stdin
+if [ "$MODO" != "local_build" ]; then
+    # 🔐 Login no GitHub Container Registry
+    echo "🔐 Login no GitHub Container Registry (GHCR)..."
+    echo "⚠️ Você precisa de um Personal Access Token (PAT) do GitHub com permissão 'read:packages'"
+    echo "📝 Crie um em: https://github.com/settings/tokens"
+    read -r -p "👤 Usuário GitHub: " GITHUB_USER
+    read -r -s -p "🔑 GitHub Personal Access Token: " GITHUB_TOKEN
+    echo ""
+    echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_USER" --password-stdin
+fi
 
 echo "🚀 Subindo stack com Docker Compose..."
-eval "$DOCKER_COMPOSE_CMD up -d --remove-orphans"
+if [ "$MODO" == "local_build" ]; then
+    eval "$DOCKER_COMPOSE_CMD -f docker-compose.yml -f docker-compose.local-build.yml build --pull"
+    eval "$DOCKER_COMPOSE_CMD -f docker-compose.yml -f docker-compose.local-build.yml up -d --remove-orphans"
+else
+    eval "$DOCKER_COMPOSE_CMD up -d --remove-orphans"
+fi
 
 echo "🎉 Instalação concluída com sucesso!"
