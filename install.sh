@@ -292,14 +292,41 @@ if [ "$MODO" == "local_build" ]; then
         return 1
     }
 
-    BACKEND_SRC=$(resolve_service_dir "$SOURCE_DIR" "backend" "Backend")
-    CHANNEL_SRC=$(resolve_service_dir "$SOURCE_DIR" "channel" "Channel")
-    FRONTEND_SRC=$(resolve_service_dir "$SOURCE_DIR" "frontend" "Frontend")
-    TRANSCRICAO_SRC=$(resolve_service_dir "$SOURCE_DIR" "transcricao" "Transcricao" "transcricao")
+    # Evita saída silenciosa com set -e quando um diretório não é encontrado.
+    BACKEND_SRC=$(resolve_service_dir "$SOURCE_DIR" "backend" "Backend" || true)
+    CHANNEL_SRC=$(resolve_service_dir "$SOURCE_DIR" "channel" "Channel" || true)
+    FRONTEND_SRC=$(resolve_service_dir "$SOURCE_DIR" "frontend" "Frontend" || true)
+    TRANSCRICAO_SRC=$(resolve_service_dir "$SOURCE_DIR" "transcricao" "Transcricao" || true)
 
     if [ -z "$BACKEND_SRC" ] || [ -z "$CHANNEL_SRC" ] || [ -z "$FRONTEND_SRC" ] || [ -z "$TRANSCRICAO_SRC" ]; then
-        echo "❌ Estrutura do repositório não reconhecida para build local."
-        echo "Verifique se existem os diretórios backend/channel/frontend/transcricao no repositório informado."
+        echo "⚠️ Estrutura padrão não reconhecida para build local."
+        echo "Informe os caminhos relativos ao diretório clonado ($SOURCE_DIR)."
+        echo "Exemplo: backend, apps/backend, services/backend"
+
+        if [ -z "$BACKEND_SRC" ]; then
+            read -r -p "📁 Caminho do backend: " BACKEND_PATH_INPUT
+            BACKEND_SRC="$SOURCE_DIR/$BACKEND_PATH_INPUT"
+        fi
+        if [ -z "$CHANNEL_SRC" ]; then
+            read -r -p "📁 Caminho do channel: " CHANNEL_PATH_INPUT
+            CHANNEL_SRC="$SOURCE_DIR/$CHANNEL_PATH_INPUT"
+        fi
+        if [ -z "$FRONTEND_SRC" ]; then
+            read -r -p "📁 Caminho do frontend: " FRONTEND_PATH_INPUT
+            FRONTEND_SRC="$SOURCE_DIR/$FRONTEND_PATH_INPUT"
+        fi
+        if [ -z "$TRANSCRICAO_SRC" ]; then
+            read -r -p "📁 Caminho da transcricao: " TRANSCRICAO_PATH_INPUT
+            TRANSCRICAO_SRC="$SOURCE_DIR/$TRANSCRICAO_PATH_INPUT"
+        fi
+    fi
+
+    if [ ! -d "$BACKEND_SRC" ] || [ ! -d "$CHANNEL_SRC" ] || [ ! -d "$FRONTEND_SRC" ] || [ ! -d "$TRANSCRICAO_SRC" ]; then
+        echo "❌ Não foi possível localizar todos os diretórios de build."
+        echo "backend: $BACKEND_SRC"
+        echo "channel: $CHANNEL_SRC"
+        echo "frontend: $FRONTEND_SRC"
+        echo "transcricao: $TRANSCRICAO_SRC"
         exit 1
     fi
 
