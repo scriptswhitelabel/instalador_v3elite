@@ -36,6 +36,19 @@ normalize_github_repo() {
 # 📦 Detecta o comando Docker Compose disponível
 DOCKER_COMPOSE_CMD=$(detect_docker_compose)
 
+# Diretório fixo de instalação no servidor (stack Docker, .env, build local)
+INSTALL_ROOT="/home/v3elite"
+mkdir -p "$INSTALL_ROOT"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ "$SCRIPT_DIR" != "$INSTALL_ROOT" ]; then
+  if [ ! -f "$INSTALL_ROOT/docker-compose.yml" ]; then
+    echo "📁 Copiando arquivos do instalador para $INSTALL_ROOT ..."
+    cp -a "$SCRIPT_DIR/." "$INSTALL_ROOT/"
+  fi
+fi
+cd "$INSTALL_ROOT" || { echo "❌ Não foi possível acessar $INSTALL_ROOT"; exit 1; }
+echo "📂 Diretório de trabalho: $INSTALL_ROOT"
+
 # 🚀 Escolha entre Instalação ou Atualização
 echo "⚙️ Qual operação deseja realizar?"
 options=("Instalação" "Atualização" "Instalar com Build local")
