@@ -34,7 +34,7 @@ ssh root@SEU-IP
 ### 2. Clone o instalador
 
 ```bash
-git clone https://github.com/A-Arca/Instalador
+git clone https://github.com/scriptswhitelabel/instalador_v3elite
 cd Instalador
 ```
 
